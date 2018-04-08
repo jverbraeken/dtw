@@ -1,0 +1,32 @@
+﻿  example.cpp
+example.cpp(94): warning C4244: 'argument': conversion from 'double' to 'unsigned int', possible loss of data
+example.cpp(97): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+example.cpp(103): warning C4244: 'argument': conversion from 'double' to 'unsigned int', possible loss of data
+example.cpp(119): warning C4018: '<': signed/unsigned mismatch
+example.cpp(121): warning C4018: '<': signed/unsigned mismatch
+example.cpp(123): warning C4018: '>=': signed/unsigned mismatch
+example.cpp(184): warning C4018: '<': signed/unsigned mismatch
+example.cpp(198): warning C4018: '<': signed/unsigned mismatch
+example.cpp(220): warning C4018: '<': signed/unsigned mismatch
+example.cpp(253): warning C4018: '<': signed/unsigned mismatch
+example.cpp(292): warning C4018: '<': signed/unsigned mismatch
+example.cpp(384): warning C4018: '<': signed/unsigned mismatch
+c:\users\jverb\documents\git\lbimproved-master\Vector.h(138): warning C4101: 'a': unreferenced local variable
+  c:\users\jverb\documents\git\lbimproved-master\Vector.h(137): note: while compiling class template member function 'bool Vector<T>::resize(const unsigned int)'
+          with
+          [
+              T=double
+          ]
+  c:\users\jverb\documents\git\lbimproved-master\Vector.h(166): note: see reference to function template instantiation 'bool Vector<T>::resize(const unsigned int)' being compiled
+          with
+          [
+              T=double
+          ]
+  c:\users\jverb\documents\git\lbimproved-master\CircularBuffer.h(363): note: see reference to class template instantiation 'Vector<T>' being compiled
+          with
+          [
+              T=double
+          ]
+  example.cpp(122): note: see reference to class template instantiation 'CircularBuffer<double>' being compiled
+  lbimproved.vcxproj -> C:\Users\jverb\Documents\Git\lbimproved-master\Debug\lbimproved.exe
+  lbimproved.vcxproj -> C:\Users\jverb\Documents\Git\lbimproved-master\Debug\lbimproved.pdb (Full PDB)
