@@ -140,9 +140,9 @@ void useGRT() {
 
 	cout << "Testing file \"walking.grt\"" << endl << endl;
 	ifstream in;
-	in.open("C:\\Users\\jverb\\Documents\\Git\\lbimproved-master\\walking.grt");
+	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\walking.grt");
 	if (!in.is_open()) {
-		cout << "File cannot be opened" << endl;
+		cout << "FILE CANNOT BE OPENED!!" << endl << endl;
 		return;
 	}
 
