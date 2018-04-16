@@ -27,7 +27,7 @@ static const vector<int> DATA_BUFFER_SIZE = {
 unsigned int numGestures;
 // per gesture per sample the duration category
 vector<vector<int>*> preGestureDuration;
-// per gesture per dimension per sample
+// per gesture per sample per dimension
 vector<vector<vector<vector<double>*>*>*> preGestureValues;
 // per resizement per gesture per dimension per sample
 // vector<vector<vector<vector<float>*>*>*> resizedAveragedPreGestureValues;
@@ -117,17 +117,40 @@ float addToAverage(float average, int size, float value)
 
 void checkDataBuffer() {
 	for (int gesture = 0; gesture < numGestures; gesture++) {
-		for (int dim = 1; dim < 2; dim++) {
-			for (int sample = 0; sample < (*(*preGestureValues[gesture])[dim]).size(); sample++) {
-				vector<double> data = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]]->getData();
-				if (data.size() >= DATA_BUFFER_SIZE[(*(preGestureDuration[gesture]))[sample]]) {
-					LB_Improved filter((*(*(*(preGestureValues[gesture]))[dim])[sample]), 12);
-					double result = filter.test(data);
-					cout << result << endl;
-					if (result < 500) {
-						cout << endl << endl << "GESTURE MATCHED " << gesture << "-" << sample << endl << endl;
-					}
+		for (int sample = 0; sample < /*(*preGestureValues[gesture]).size()*/ 1; sample++) {
+			double error = 0;
+			for (int dim = 0; dim < 2; dim++) {
+				CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
+				vector<double> data = buffer->getData();
+				if (data.size() == buffer->getSize()) {
+					LB_Improved filter((*(*(*(preGestureValues[gesture]))[sample])[dim]), 12);
+					error += filter.test(data);
+				} else {
+					error += 999999;
 				}
+			}
+			// We have to normalize the z-axis
+			for (int dim = 2; dim < 3; dim++) {
+				CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
+				vector<double> data = buffer->getData();
+				if (data.size() == buffer->getSize()) {
+					vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
+					int size = preGestureData->size();
+					for (int i = data.size() - 1; i >= data.size() - size; i--) {
+						data[i] = data[i] - (*preGestureData)[size - (data.size() - 1 - i) - 1];
+					}
+					for (int i = data.size() - size - 1; i >= 0; i--) {
+						data[i] = data[i] - (*preGestureData)[0];
+					}
+					LB_Improved filter(*preGestureData, 12);
+					error += filter.test(data);
+				} else {
+					error += 999999;
+				}
+			}
+			printf("%f\n", error);
+			if (error < 500) {
+				printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
 			}
 		}
 	}
@@ -183,9 +206,6 @@ void useGRT() {
 	in >> numGestures;
 	for (int x = 0; x < numGestures; x++) {
 		preGestureValues.push_back(new vector<vector<vector<double>*>*>());
-		for (int i = 0; i < 6; i++) {
-			preGestureValues.back()->push_back(new vector<vector<double>*>());
-		}
 		preGestureDuration.push_back(new vector<int>());
 	}
 
@@ -262,20 +282,22 @@ void useGRT() {
 			cout << "loadDatasetFromFile(std::string filename) - Failed to find TimeSeriesData!" << std::endl;
 		}
 
+		preGestureValues[classLabel]->push_back(new vector<vector<double>*>());
+
 		for (int i = 0; i < 6; i++) {
-			(*preGestureValues[classLabel])[i]->push_back(new vector<double>());
+			preGestureValues[classLabel]->back()->push_back(new vector<double>());
 		}
 
-		for (UINT i = 0; i < timeSeriesLength; i++) {
-			for (UINT j = 0; j < 3; j++) {
+		for (int i = 0; i < timeSeriesLength; i++) {
+			for (int j = 0; j < 3; j++) {
 				float y;
 				in >> y;
-				(*preGestureValues[classLabel])[j]->back()->push_back(y);
+				(*preGestureValues[classLabel]->back())[j]->push_back(y);
 			}
-			for (UINT j = 3; j < 6; j++) {
+			for (int j = 3; j < 6; j++) {
 				float y;
 				in >> y;
-				(*preGestureValues[classLabel])[j]->back()->push_back(y / 100.f);
+				(*preGestureValues[classLabel]->back())[j]->push_back(y / 100.f);
 			}
 		}
 	}
@@ -390,7 +412,7 @@ int main() {
 		}
 		else if (request == COMTP_SHAKING_STARTED)
 		{
-			// Do nothing
+			// Do nothin
 		}
 		else if (request == COMTP_SHAKING_STOPPED)
 		{
