@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <time.h>
 #include "dtw.h"
 #include "CircularBuffer.h"
 
@@ -12,6 +13,8 @@
 static const unsigned char COMTP_SENSOR_DATA = 1;
 static const unsigned char COMTP_SHAKING_STARTED = 2;
 static const unsigned char COMTP_SHAKING_STOPPED = 3;
+
+static const unsigned double MINIMUM_TIME_BETWEEN_GESTURES = 1.0;
 
 static const unsigned int DATA_FREQUENCY = 25;
 
@@ -34,6 +37,9 @@ vector<vector<vector<vector<double>*>*>*> preGestureValues;
 
 // per dimension per timesequence length a CircularBuffer
 vector<vector<CircularBuffer<double> *> *> * dataBuffer;
+
+// per gesture per sample the detection time
+vector<vector<time_t*>*> gestureDetectionTime;
 
 //////// HELPER FUNCTIONS
 
@@ -116,41 +122,46 @@ float addToAverage(float average, int size, float value)
 
 
 void checkDataBuffer() {
+	time_t currentTime;
+	time(&currentTime);
 	for (int gesture = 0; gesture < numGestures; gesture++) {
-		for (int sample = 0; sample < /*(*preGestureValues[gesture]).size()*/ 1; sample++) {
-			double error = 0;
-			for (int dim = 0; dim < 2; dim++) {
-				CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
-				vector<double> data = buffer->getData();
-				if (data.size() == buffer->getSize()) {
-					LB_Improved filter((*(*(*(preGestureValues[gesture]))[sample])[dim]), 12);
-					error += filter.test(data);
-				} else {
-					error += 999999;
-				}
-			}
-			// We have to normalize the z-axis
-			for (int dim = 2; dim < 3; dim++) {
-				CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
-				vector<double> data = buffer->getData();
-				if (data.size() == buffer->getSize()) {
-					vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
-					int size = preGestureData->size();
-					for (int i = data.size() - 1; i >= data.size() - size; i--) {
-						data[i] = data[i] - (*preGestureData)[size - (data.size() - 1 - i) - 1];
+		for (int sample = 0; sample < (*preGestureValues[gesture]).size(); sample++) {
+			if (currentTime - *(*(gestureDetectionTime[gesture]))[sample] > MINIMUM_TIME_BETWEEN_GESTURES) {
+				double error = 0;
+				for (int dim = 0; dim < 2; dim++) {
+					CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
+					vector<double> data = buffer->getData();
+					if (data.size() == buffer->getSize()) {
+						LB_Improved filter((*(*(*(preGestureValues[gesture]))[sample])[dim]), 12);
+						error += filter.test(data);
+					} else {
+						error += 999999;
 					}
-					for (int i = data.size() - size - 1; i >= 0; i--) {
-						data[i] = data[i] - (*preGestureData)[0];
-					}
-					LB_Improved filter(*preGestureData, 12);
-					error += filter.test(data);
-				} else {
-					error += 999999;
 				}
-			}
-			printf("%f\n", error);
-			if (error < 500) {
-				printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
+				// We have to normalize the z-axis
+				for (int dim = 2; dim < 3; dim++) {
+					CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
+					vector<double> data = buffer->getData();
+					if (data.size() == buffer->getSize()) {
+						vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
+						int size = preGestureData->size();
+						for (int i = data.size() - 1; i >= data.size() - size; i--) {
+							data[i] = data[i] - (*preGestureData)[size - (data.size() - 1 - i) - 1];
+						}
+						for (int i = data.size() - size - 1; i >= 0; i--) {
+							data[i] = data[i] - (*preGestureData)[0];
+						}
+						LB_Improved filter(*preGestureData, 12);
+						error += filter.test(data);
+					} else {
+						error += 999999;
+					}
+				}
+				printf("%f\n", error);
+				if (error < 500 * 3) {
+					printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
+					time((*(gestureDetectionTime[gesture]))[sample]);
+				}
 			}
 		}
 	}
@@ -161,9 +172,9 @@ void checkDataBuffer() {
 void useGRT() {
 	preGestureValues = vector<vector<vector<vector<double>*>*>*>();
 
-	cout << "Testing file \"walking.grt\"" << endl << endl;
+	cout << "Testing file \"walking_mobile.grt\"" << endl << endl;
 	ifstream in;
-	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\walking.grt");
+	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\walking_mobile.grt");
 	if (!in.is_open()) {
 		cout << "FILE CANNOT BE OPENED!!" << endl << endl;
 		return;
@@ -207,6 +218,7 @@ void useGRT() {
 	for (int x = 0; x < numGestures; x++) {
 		preGestureValues.push_back(new vector<vector<vector<double>*>*>());
 		preGestureDuration.push_back(new vector<int>());
+		gestureDetectionTime.push_back(new vector<time_t*>());
 	}
 
 	//Get the total number of classes in the training data
@@ -287,6 +299,9 @@ void useGRT() {
 		for (int i = 0; i < 6; i++) {
 			preGestureValues[classLabel]->back()->push_back(new vector<double>());
 		}
+
+		gestureDetectionTime[classLabel]->push_back(new time_t());
+		time(gestureDetectionTime[classLabel]->back());
 
 		for (int i = 0; i < timeSeriesLength; i++) {
 			for (int j = 0; j < 3; j++) {
@@ -412,7 +427,7 @@ int main() {
 		}
 		else if (request == COMTP_SHAKING_STARTED)
 		{
-			// Do nothin
+			// Do nothing
 		}
 		else if (request == COMTP_SHAKING_STOPPED)
 		{
