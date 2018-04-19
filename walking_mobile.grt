@@ -9,7 +9,8 @@ LabelledTimeSeriesTrainingData:
 ************TIME_SERIES************
 ClassID: 1
 TimeSeriesLength: 25
-Duration: 957TimeSeriesData:
+Duration: 957
+TimeSeriesData:
 -6 -22 97 -4 9 -7
 -7 -24 97 1 5 2
 -9 -28 95 6 6 4

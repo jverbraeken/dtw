@@ -128,37 +128,51 @@ void checkDataBuffer() {
 	time(&currentTime);
 	for (int gesture = 0; gesture < numGestures; gesture++) {
 		for (int sample = 0; sample < (*preGestureValues[gesture]).size(); sample++) {
+			vector<double> dataX = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getData();
+			vector<double> dataY = (*(*dataBuffer)[1])[(*(preGestureDuration[gesture]))[sample]]->getData();
+			vector<double> dataZ = (*(*dataBuffer)[2])[(*(preGestureDuration[gesture]))[sample]]->getData();
+			vector<double> newDataX;
+			vector<double> newDataY;
 			if (currentTime - *(*(gestureDetectionTime[gesture]))[sample] > MINIMUM_TIME_BETWEEN_GESTURES) {
 				double error = 0;
-				for (int dim = 0; dim < 3; dim++) {
-					CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
-					vector<double> data = buffer->getData();
-					if (data.size() == buffer->getSize()) {
-						LB_Improved filter((*(*(*(preGestureValues[gesture]))[sample])[dim]), 12);
-						error += filter.test(data);
-					} else {
-						error += 999999;
+				double someBufferSize = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getData().getSize();
+				double someBufferCapacity = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getSize();
+				if (someBufferSize == someBufferCapacity) {
+					double startAngle = atan2((*(*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]])[0], (*(*(*dataBuffer)[1])[(*(preGestureDuration[gesture]))[sample]])[0]);
+					double cs = cos(startAngle);
+					double sn = sin(startAngle);
+					for (int i = 0; i < dataX.size(); i++) {
+						newDataX.push_back(dataX[i] * cs - dataY[i] * sn);
+						newDataY.push_back(dataX[i] * sn + dataY[i] * cs);
 					}
+					LB_Improved filterX((*(*(*(preGestureValues[gesture]))[sample])[0]), 12);
+					error += filterX.test(newDataX);
+					LB_Improved filterY((*(*(*(preGestureValues[gesture]))[sample])[1]), 12);
+					error += filterY.test(newDataY);
+					LB_Improved filterZ((*(*(*(preGestureValues[gesture]))[sample])[2]), 12);
+					error += filterZ.test(dataZ);
+					// We have to normalize the z-axis
+					/*for (int dim = 2; dim < 3; dim++) {
+						CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
+						vector<double> data = buffer->getData();
+						if (data.size() == buffer->getSize()) {
+							vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
+							int size = (int) preGestureData->size();
+							for (int i = (int) data.size() - 1; i >= (int) data.size() - size; i--) {
+								data[i] = data[i] - (*preGestureData)[size - (data.size() - i - 1) - 1];
+							}
+							for (int i = (int) data.size() - size - 1; i >= 0; i--) {
+								data[i] = data[i] - (*preGestureData)[0];
+							}
+							LB_Improved filter(*preGestureData, 12);
+							error += filter.test(data);
+						} else {
+							error += 999999;
+						}
+					}*/
+				} else {
+					error += 999999;
 				}
-				// We have to normalize the z-axis
-				/*for (int dim = 2; dim < 3; dim++) {
-					CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
-					vector<double> data = buffer->getData();
-					if (data.size() == buffer->getSize()) {
-						vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
-						int size = (int) preGestureData->size();
-						for (int i = (int) data.size() - 1; i >= (int) data.size() - size; i--) {
-							data[i] = data[i] - (*preGestureData)[size - (data.size() - i - 1) - 1];
-						}
-						for (int i = (int) data.size() - size - 1; i >= 0; i--) {
-							data[i] = data[i] - (*preGestureData)[0];
-						}
-						LB_Improved filter(*preGestureData, 12);
-						error += filter.test(data);
-					} else {
-						error += 999999;
-					}
-				}*/
 				printf("%f\n", error);
 				if (error < ERROR_THRESHOLD) {
 					printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
@@ -305,16 +319,29 @@ void useGRT() {
 		gestureDetectionTime[classLabel]->push_back(new time_t());
 		time(gestureDetectionTime[classLabel]->back());
 
+		double startAngle;
 		for (int i = 0; i < timeSeriesLength; i++) {
-			for (int j = 0; j < 3; j++) {
-				float y;
-				in >> y;
-				(*preGestureValues[classLabel]->back())[j]->push_back(y / 100.f);
+			float x, y, z, nx, ny;
+			in >> x;
+			in >> y;
+			in >> z;
+			x /= 100.f;
+			y /= 100.f;
+			z /= 100.f;
+			if (i == 0) {
+				startAngle = atan2(x, y);
 			}
+			double cs = cos(startAngle);
+			double sn = sin(startAngle);
+			nx = x * cs - y * sn;
+			ny = x * sn + y * cs;
+			(*preGestureValues[classLabel]->back())[0]->push_back(nx);
+			(*preGestureValues[classLabel]->back())[1]->push_back(ny);
+			(*preGestureValues[classLabel]->back())[2]->push_back(z);
 			for (int j = 3; j < 6; j++) {
-				float y;
-				in >> y;
-				(*preGestureValues[classLabel]->back())[j]->push_back(y / 100.f);
+				float val;
+				in >> val;
+				(*preGestureValues[classLabel]->back())[j]->push_back(val / 100.f);
 			}
 		}
 	}
