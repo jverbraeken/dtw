@@ -14,7 +14,7 @@ static const unsigned char COMTP_SENSOR_DATA = 1;
 static const unsigned char COMTP_SHAKING_STARTED = 2;
 static const unsigned char COMTP_SHAKING_STOPPED = 3;
 
-static const unsigned int ERROR_THRESHOLD = 15;
+static const unsigned int ERROR_THRESHOLD = 7.5;
 
 static const unsigned double MINIMUM_TIME_BETWEEN_GESTURES = 1.0;
 
@@ -42,6 +42,8 @@ vector<vector<CircularBuffer<double> *> *> * dataBuffer;
 
 // per gesture per sample the detection time
 vector<vector<time_t*>*> gestureDetectionTime;
+// per gesture per sample a bounty
+vector<vector<int>*> gestureBounty;
 
 //////// HELPER FUNCTIONS
 
@@ -128,6 +130,10 @@ void checkDataBuffer() {
 	time(&currentTime);
 	for (int gesture = 0; gesture < numGestures; gesture++) {
 		for (int sample = 0; sample < (*preGestureValues[gesture]).size(); sample++) {
+			if ((*(gestureBounty[gesture]))[sample] > 0) {
+				(*(gestureBounty[gesture]))[sample]--;
+				continue;
+			}
 			vector<double> dataX = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getData();
 			vector<double> dataY = (*(*dataBuffer)[1])[(*(preGestureDuration[gesture]))[sample]]->getData();
 			vector<double> dataZ = (*(*dataBuffer)[2])[(*(preGestureDuration[gesture]))[sample]]->getData();
@@ -151,25 +157,6 @@ void checkDataBuffer() {
 					error += filterY.test(newDataY);
 					LB_Improved filterZ((*(*(*(preGestureValues[gesture]))[sample])[2]), 12);
 					error += filterZ.test(dataZ);
-					// We have to normalize the z-axis
-					/*for (int dim = 2; dim < 3; dim++) {
-						CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
-						vector<double> data = buffer->getData();
-						if (data.size() == buffer->getSize()) {
-							vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
-							int size = (int) preGestureData->size();
-							for (int i = (int) data.size() - 1; i >= (int) data.size() - size; i--) {
-								data[i] = data[i] - (*preGestureData)[size - (data.size() - i - 1) - 1];
-							}
-							for (int i = (int) data.size() - size - 1; i >= 0; i--) {
-								data[i] = data[i] - (*preGestureData)[0];
-							}
-							LB_Improved filter(*preGestureData, 12);
-							error += filter.test(data);
-						} else {
-							error += 999999;
-						}
-					}*/
 				} else {
 					error += 999999;
 				}
@@ -177,6 +164,8 @@ void checkDataBuffer() {
 				if (error < ERROR_THRESHOLD) {
 					printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
 					time((*(gestureDetectionTime[gesture]))[sample]);
+				} else {
+					(*(gestureBounty[gesture]))[sample] = error < ERROR_THRESHOLD * 1.3 ? 1 : (int) (error - ERROR_THRESHOLD) / 2.5;
 				}
 			}
 		}
@@ -235,6 +224,7 @@ void useGRT() {
 		preGestureValues.push_back(new vector<vector<vector<double>*>*>());
 		preGestureDuration.push_back(new vector<int>());
 		gestureDetectionTime.push_back(new vector<time_t*>());
+		gestureBounty.push_back(new vector<int>());
 	}
 
 	//Get the total number of classes in the training data
@@ -318,6 +308,8 @@ void useGRT() {
 
 		gestureDetectionTime[classLabel]->push_back(new time_t());
 		time(gestureDetectionTime[classLabel]->back());
+
+		gestureBounty[classLabel]->push_back(25);
 
 		double startAngle;
 		for (int i = 0; i < timeSeriesLength; i++) {
