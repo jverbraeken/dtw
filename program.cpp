@@ -14,6 +14,8 @@ static const unsigned char COMTP_SENSOR_DATA = 1;
 static const unsigned char COMTP_SHAKING_STARTED = 2;
 static const unsigned char COMTP_SHAKING_STOPPED = 3;
 
+static const unsigned int ERROR_THRESHOLD = 15;
+
 static const unsigned double MINIMUM_TIME_BETWEEN_GESTURES = 1.0;
 
 static const unsigned int DATA_FREQUENCY = 25;
@@ -128,7 +130,7 @@ void checkDataBuffer() {
 		for (int sample = 0; sample < (*preGestureValues[gesture]).size(); sample++) {
 			if (currentTime - *(*(gestureDetectionTime[gesture]))[sample] > MINIMUM_TIME_BETWEEN_GESTURES) {
 				double error = 0;
-				for (int dim = 0; dim < 2; dim++) {
+				for (int dim = 0; dim < 3; dim++) {
 					CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
 					vector<double> data = buffer->getData();
 					if (data.size() == buffer->getSize()) {
@@ -139,16 +141,16 @@ void checkDataBuffer() {
 					}
 				}
 				// We have to normalize the z-axis
-				for (int dim = 2; dim < 3; dim++) {
+				/*for (int dim = 2; dim < 3; dim++) {
 					CircularBuffer<double>* buffer = (*(*dataBuffer)[dim])[(*(preGestureDuration[gesture]))[sample]];
 					vector<double> data = buffer->getData();
 					if (data.size() == buffer->getSize()) {
 						vector<double>* preGestureData = (*(*(preGestureValues[gesture]))[sample])[dim];
-						int size = preGestureData->size();
-						for (int i = data.size() - 1; i >= data.size() - size; i--) {
-							data[i] = data[i] - (*preGestureData)[size - (data.size() - 1 - i) - 1];
+						int size = (int) preGestureData->size();
+						for (int i = (int) data.size() - 1; i >= (int) data.size() - size; i--) {
+							data[i] = data[i] - (*preGestureData)[size - (data.size() - i - 1) - 1];
 						}
-						for (int i = data.size() - size - 1; i >= 0; i--) {
+						for (int i = (int) data.size() - size - 1; i >= 0; i--) {
 							data[i] = data[i] - (*preGestureData)[0];
 						}
 						LB_Improved filter(*preGestureData, 12);
@@ -156,9 +158,9 @@ void checkDataBuffer() {
 					} else {
 						error += 999999;
 					}
-				}
+				}*/
 				printf("%f\n", error);
-				if (error < 500 * 3) {
+				if (error < ERROR_THRESHOLD) {
 					printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
 					time((*(gestureDetectionTime[gesture]))[sample]);
 				}
@@ -307,7 +309,7 @@ void useGRT() {
 			for (int j = 0; j < 3; j++) {
 				float y;
 				in >> y;
-				(*preGestureValues[classLabel]->back())[j]->push_back(y);
+				(*preGestureValues[classLabel]->back())[j]->push_back(y / 100.f);
 			}
 			for (int j = 3; j < 6; j++) {
 				float y;
