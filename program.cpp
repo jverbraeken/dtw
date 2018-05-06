@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <chrono>
 #include <time.h>
 #include "dtw.h"
 #include "CircularBuffer.h"
@@ -14,9 +15,9 @@ static const unsigned char COMTP_SENSOR_DATA = 1;
 static const unsigned char COMTP_SHAKING_STARTED = 2;
 static const unsigned char COMTP_SHAKING_STOPPED = 3;
 
-static const unsigned int ERROR_THRESHOLD = 7.5;
+static const unsigned int ERROR_THRESHOLD = 10;
 
-static const unsigned double MINIMUM_TIME_BETWEEN_GESTURES = 1.0;
+static const unsigned int MINIMUM_TIME_BETWEEN_GESTURES = 1000;
 
 static const unsigned int DATA_FREQUENCY = 25;
 
@@ -41,7 +42,7 @@ vector<vector<vector<vector<double>*>*>*> preGestureValues;
 vector<vector<CircularBuffer<double> *> *> * dataBuffer;
 
 // per gesture per sample the detection time
-vector<vector<time_t*>*> gestureDetectionTime;
+vector<vector<long long>*> gestureDetectionTime;
 // per gesture per sample a bounty
 vector<vector<int>*> gestureBounty;
 
@@ -126,10 +127,9 @@ float addToAverage(float average, int size, float value)
 
 
 void checkDataBuffer() {
-	time_t currentTime;
-	time(&currentTime);
+	long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	for (int gesture = 0; gesture < numGestures; gesture++) {
-		for (int sample = 0; sample < (*preGestureValues[gesture]).size(); sample++) {
+		for (int sample = 0; sample < 1 /* (*preGestureValues[gesture]).size() */ ; sample++) {
 			if ((*(gestureBounty[gesture]))[sample] > 0) {
 				(*(gestureBounty[gesture]))[sample]--;
 				continue;
@@ -139,7 +139,8 @@ void checkDataBuffer() {
 			vector<double> dataZ = (*(*dataBuffer)[2])[(*(preGestureDuration[gesture]))[sample]]->getData();
 			vector<double> newDataX;
 			vector<double> newDataY;
-			if (currentTime - *(*(gestureDetectionTime[gesture]))[sample] > MINIMUM_TIME_BETWEEN_GESTURES) {
+			std::cout << "now: " << now << ", other: " << (*(gestureDetectionTime[gesture]))[sample] << endl;
+			if (now - (*(gestureDetectionTime[gesture]))[sample] > MINIMUM_TIME_BETWEEN_GESTURES) {
 				double error = 0;
 				double someBufferSize = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getData().getSize();
 				double someBufferCapacity = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getSize();
@@ -163,9 +164,9 @@ void checkDataBuffer() {
 				printf("%f\n", error);
 				if (error < ERROR_THRESHOLD) {
 					printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
-					time((*(gestureDetectionTime[gesture]))[sample]);
+					(*(gestureDetectionTime[gesture]))[sample] = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 				} else {
-					(*(gestureBounty[gesture]))[sample] = error < ERROR_THRESHOLD * 1.3 ? 1 : (int) (error - ERROR_THRESHOLD) / 2.5;
+					(*(gestureBounty[gesture]))[sample] = error < ERROR_THRESHOLD * 1.3 ? 1 : (int) (error - ERROR_THRESHOLD) / 5;
 				}
 			}
 		}
@@ -177,9 +178,9 @@ void checkDataBuffer() {
 void useGRT() {
 	preGestureValues = vector<vector<vector<vector<double>*>*>*>();
 
-	cout << "Testing file \"walking_mobile.grt\"" << endl << endl;
+	cout << "Testing file \"walking.grt\"" << endl << endl;
 	ifstream in;
-	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\walking_mobile.grt");
+	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\walking.grt");
 	if (!in.is_open()) {
 		cout << "FILE CANNOT BE OPENED!!" << endl << endl;
 		return;
@@ -223,7 +224,7 @@ void useGRT() {
 	for (int x = 0; x < numGestures; x++) {
 		preGestureValues.push_back(new vector<vector<vector<double>*>*>());
 		preGestureDuration.push_back(new vector<int>());
-		gestureDetectionTime.push_back(new vector<time_t*>());
+		gestureDetectionTime.push_back(new vector<long long>());
 		gestureBounty.push_back(new vector<int>());
 	}
 
@@ -306,8 +307,7 @@ void useGRT() {
 			preGestureValues[classLabel]->back()->push_back(new vector<double>());
 		}
 
-		gestureDetectionTime[classLabel]->push_back(new time_t());
-		time(gestureDetectionTime[classLabel]->back());
+		gestureDetectionTime[classLabel]->push_back(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 
 		gestureBounty[classLabel]->push_back(25);
 
