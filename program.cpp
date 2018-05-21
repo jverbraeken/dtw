@@ -15,31 +15,20 @@ static const unsigned char COMTP_SENSOR_DATA = 1;
 static const unsigned char COMTP_SHAKING_STARTED = 2;
 static const unsigned char COMTP_SHAKING_STOPPED = 3;
 
-static const unsigned int ERROR_THRESHOLD = 10;
+float ERROR_THRESHOLD = 0.5;
 
 static const unsigned int MINIMUM_TIME_BETWEEN_GESTURES = 1000;
 
 static const unsigned int DATA_FREQUENCY = 25;
 
-static const vector<int> DATA_BUFFER_SIZE = {
-	DATA_FREQUENCY * 1,
-	DATA_FREQUENCY * 2,
-	DATA_FREQUENCY * 3,
-	DATA_FREQUENCY * 5,
-	DATA_FREQUENCY * 7,
-	DATA_FREQUENCY * 10
-};
-
 unsigned int numGestures;
-// per gesture per sample the duration category
-vector<vector<int>*> preGestureDuration;
 // per gesture per sample per dimension
 vector<vector<vector<vector<double>*>*>*> preGestureValues;
 // per resizement per gesture per dimension per sample
 // vector<vector<vector<vector<float>*>*>*> resizedAveragedPreGestureValues;
 
-// per dimension per timesequence length a CircularBuffer
-vector<vector<CircularBuffer<double> *> *> * dataBuffer;
+// per per gesture per sample per dimension a CircularBuffer
+vector<vector<vector<CircularBuffer<double> *> *> *> dataBuffer;
 
 // per gesture per sample the detection time
 vector<vector<long long>*> gestureDetectionTime;
@@ -92,82 +81,51 @@ long long getLongFromBuffer(char *buf, int offset) {
 	return result;
 }
 
-vector<float>* resizeVector(int newSize, vector<float>* originalVector)
-{
-	double scalingFactor = double(originalVector->size()) / double(newSize);
-	vector<float>* result = new vector<float>;
-	for (int k = 0; k < newSize; k++)
-	{
-		double avg = 0;
-		if (k > 0) { // just for efficiency
-			double firstFactor = ceil(k * scalingFactor - 0.0001) - k * scalingFactor;
-			if (abs(firstFactor) > 0.0001) {
-				avg += firstFactor * (*originalVector)[floor(k * scalingFactor)];
-			}
-		}
-		for (int l = ceil(k * scalingFactor - 0.0001); l < floor((k + 1) * scalingFactor); l++)
-		{
-			avg += (*originalVector)[l];
-		}
-		double lastFactor = (k + 1) * scalingFactor - floor((k + 1) * scalingFactor + 0.0001);
-		if (abs(lastFactor) > 0.0001) {
-			avg += lastFactor * (*originalVector)[floor((k + 1) * scalingFactor + 0.0001)];
-		}
-		avg /= scalingFactor;
-		result->push_back(float(avg));
-	}
-	return result;
-}
-
-float addToAverage(float average, int size, float value)
-{
-	return (size * average + value) / (size + 1);
-}
-
 
 
 void checkDataBuffer() {
 	long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-	for (int gesture = 0; gesture < numGestures; gesture++) {
-		for (int sample = 0; sample < 1 /* (*preGestureValues[gesture]).size() */ ; sample++) {
+	for (int gesture = 0; gesture < 1 /*numGestures */; gesture++) {
+		for (int sample = 0; sample < 1 /*(*preGestureValues[gesture]).size() */; sample++) {
 			if ((*(gestureBounty[gesture]))[sample] > 0) {
 				(*(gestureBounty[gesture]))[sample]--;
 				continue;
 			}
-			vector<double> dataX = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getData();
-			vector<double> dataY = (*(*dataBuffer)[1])[(*(preGestureDuration[gesture]))[sample]]->getData();
-			vector<double> dataZ = (*(*dataBuffer)[2])[(*(preGestureDuration[gesture]))[sample]]->getData();
+			Vector<double> dataX = (*(*dataBuffer[gesture])[sample])[0]->getData();
+			Vector<double> dataY = (*(*dataBuffer[gesture])[sample])[1]->getData();
+			Vector<double> dataZ = (*(*dataBuffer[gesture])[sample])[2]->getData();
 			vector<double> newDataX;
 			vector<double> newDataY;
-			std::cout << "now: " << now << ", other: " << (*(gestureDetectionTime[gesture]))[sample] << endl;
+			//std::cout << "now: " << now << ", other: " << (*(gestureDetectionTime[gesture]))[sample] << endl;
 			if (now - (*(gestureDetectionTime[gesture]))[sample] > MINIMUM_TIME_BETWEEN_GESTURES) {
 				double error = 0;
-				double someBufferSize = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getData().getSize();
-				double someBufferCapacity = (*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]]->getSize();
-				if (someBufferSize == someBufferCapacity) {
-					double startAngle = atan2((*(*(*dataBuffer)[0])[(*(preGestureDuration[gesture]))[sample]])[0], (*(*(*dataBuffer)[1])[(*(preGestureDuration[gesture]))[sample]])[0]);
+				int numValuesInBuffer = (*(*dataBuffer[gesture])[sample])[0]->getNumValuesInBuffer();
+				int bufferSize = (*(*dataBuffer[gesture])[sample])[0]->getSize();
+				if (numValuesInBuffer == bufferSize) {
+					/*double startAngle = atan2(dataX[0], dataY[0]);
 					double cs = cos(startAngle);
 					double sn = sin(startAngle);
 					for (int i = 0; i < dataX.size(); i++) {
 						newDataX.push_back(dataX[i] * cs - dataY[i] * sn);
 						newDataY.push_back(dataX[i] * sn + dataY[i] * cs);
+					}*/
+					newDataX = dataX;
+					newDataY = dataY;
+					LB_Improved filterX((*(*(*(preGestureValues[gesture]))[sample])[0]), 6);
+					error += (filterX.test(newDataX) / (*(*(*(preGestureValues[gesture]))[sample])[0]).size());
+					LB_Improved filterY((*(*(*(preGestureValues[gesture]))[sample])[1]), 6);
+					error += (filterY.test(newDataY) / (*(*(*(preGestureValues[gesture]))[sample])[1]).size());
+					LB_Improved filterZ((*(*(*(preGestureValues[gesture]))[sample])[2]), 6);
+					error += (filterZ.test(dataZ) / (*(*(*(preGestureValues[gesture]))[sample])[2]).size());
+					printf("%f\n", error);
+					if (error < ERROR_THRESHOLD) {
+						printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
+						(*(gestureDetectionTime[gesture]))[sample] = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 					}
-					LB_Improved filterX((*(*(*(preGestureValues[gesture]))[sample])[0]), 12);
-					error += filterX.test(newDataX);
-					LB_Improved filterY((*(*(*(preGestureValues[gesture]))[sample])[1]), 12);
-					error += filterY.test(newDataY);
-					LB_Improved filterZ((*(*(*(preGestureValues[gesture]))[sample])[2]), 12);
-					error += filterZ.test(dataZ);
-				} else {
-					error += 999999;
-				}
-				printf("%f\n", error);
-				if (error < ERROR_THRESHOLD) {
-					printf("\n\nGESTURE MATCHED %d-%d\n\n", gesture, sample);
-					(*(gestureDetectionTime[gesture]))[sample] = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-				} else {
-					(*(gestureBounty[gesture]))[sample] = error < ERROR_THRESHOLD * 1.3 ? 1 : (int) (error - ERROR_THRESHOLD) / 5;
-				}
+					else {
+						(*(gestureBounty[gesture]))[sample] = error < ERROR_THRESHOLD * 1.3 ? 1 : (int)((error - ERROR_THRESHOLD) * 2);
+					}
+				}			
 			}
 		}
 	}
@@ -178,9 +136,9 @@ void checkDataBuffer() {
 void useGRT() {
 	preGestureValues = vector<vector<vector<vector<double>*>*>*>();
 
-	cout << "Testing file \"walking.grt\"" << endl << endl;
+	cout << "Testing file \"golf.grt\"" << endl << endl;
 	ifstream in;
-	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\walking.grt");
+	in.open("C:\\Users\\jverb\\Documents\\Git\\dtw-test\\golf.grt");
 	if (!in.is_open()) {
 		cout << "FILE CANNOT BE OPENED!!" << endl << endl;
 		return;
@@ -223,7 +181,7 @@ void useGRT() {
 	in >> numGestures;
 	for (int x = 0; x < numGestures; x++) {
 		preGestureValues.push_back(new vector<vector<vector<double>*>*>());
-		preGestureDuration.push_back(new vector<int>());
+		dataBuffer.push_back(new vector<vector<CircularBuffer<double>*>*>());
 		gestureDetectionTime.push_back(new vector<long long>());
 		gestureBounty.push_back(new vector<int>());
 	}
@@ -256,7 +214,7 @@ void useGRT() {
 	}
 
 	//Load each of the time series
-	for (UINT x = 0; x < numTrainingExamples; x++) {
+	for (UINT i = 0; i < numTrainingExamples; i++) {
 		UINT classLabel = 0;
 		UINT timeSeriesLength = 0;
 		int duration = 0;
@@ -288,12 +246,6 @@ void useGRT() {
 			cout << "loadDatasetFromFile(std::string filename) - Failed to find Duration!" << std::endl;
 		}
 		in >> duration;
-		for (int i = 0; i < sizeof(DATA_BUFFER_SIZE); i++) {
-			if (duration / (1000 / DATA_FREQUENCY) < DATA_BUFFER_SIZE[i]) {
-				(*(preGestureDuration.back())).push_back(i);
-				break;
-			}
-		}
 
 		in >> word;
 		if (word != "TimeSeriesData:") {
@@ -302,17 +254,19 @@ void useGRT() {
 		}
 
 		preGestureValues[classLabel]->push_back(new vector<vector<double>*>());
+		dataBuffer[classLabel]->push_back(new vector<CircularBuffer<double>*>());
 
-		for (int i = 0; i < 6; i++) {
+		for (int j = 0; j < 6; j++) {
 			preGestureValues[classLabel]->back()->push_back(new vector<double>());
+			dataBuffer[classLabel]->back()->push_back(new CircularBuffer<double>(timeSeriesLength));
 		}
 
 		gestureDetectionTime[classLabel]->push_back(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 
 		gestureBounty[classLabel]->push_back(25);
 
-		double startAngle;
-		for (int i = 0; i < timeSeriesLength; i++) {
+		//double startAngle;
+		for (int j = 0; j < timeSeriesLength; j++) {
 			float x, y, z, nx, ny;
 			in >> x;
 			in >> y;
@@ -320,20 +274,22 @@ void useGRT() {
 			x /= 100.f;
 			y /= 100.f;
 			z /= 100.f;
-			if (i == 0) {
-				startAngle = atan2(x, y);
-			}
-			double cs = cos(startAngle);
-			double sn = sin(startAngle);
-			nx = x * cs - y * sn;
-			ny = x * sn + y * cs;
+			//if (j == 0) {
+			//	startAngle = atan2(x, y);
+			//}
+			//double cs = cos(startAngle);
+			//double sn = sin(startAngle);
+			//nx = x * cs - y * sn;
+			//ny = x * sn + y * cs;
+			nx = x;
+			ny = y;
 			(*preGestureValues[classLabel]->back())[0]->push_back(nx);
 			(*preGestureValues[classLabel]->back())[1]->push_back(ny);
 			(*preGestureValues[classLabel]->back())[2]->push_back(z);
-			for (int j = 3; j < 6; j++) {
+			for (int k = 3; k < 6; k++) {
 				float val;
 				in >> val;
-				(*preGestureValues[classLabel]->back())[j]->push_back(val / 100.f);
+				(*preGestureValues[classLabel]->back())[k]->push_back(val / 100.f);
 			}
 		}
 	}
@@ -343,15 +299,7 @@ void useGRT() {
 int main() {
 	cout << "UWF testing" << endl;
 
-	dataBuffer = new vector<vector<CircularBuffer<double> *> *>();
-
-	for (int i = 0; i < 6; i++) {
-		vector<CircularBuffer<double>*>* vec = new vector<CircularBuffer<double>*>();
-		for (int j = 0; j < DATA_BUFFER_SIZE.size(); j++) {
-			vec->push_back(new CircularBuffer<double>(DATA_BUFFER_SIZE[j]));
-		}
-		dataBuffer->push_back(vec);
-	}
+	//dataBuffer = new vector<vector<vector<CircularBuffer<double> *> *> *>();
 
 	useGRT();
 
@@ -420,27 +368,32 @@ int main() {
 		//printf("Data: %s\n", buf);
 		unsigned char request = getByteFromBuffer(buf, 0);
 		if (request == COMTP_SENSOR_DATA) {
-			float xrot = getFloatFromBuffer(buf, 1);
-			float yrot = getFloatFromBuffer(buf, 5);
-			float zrot = getFloatFromBuffer(buf, 9);
-			//long long rot_timestamp = getLongFromBuffer(buf, 13);
+			float xvector = getFloatFromBuffer(buf, 1);
+			float yvector = getFloatFromBuffer(buf, 5);
+			float zvector = getFloatFromBuffer(buf, 9);
+			//float xrot = getFloatFromBuffer(buf, 13);
+			//float yrot = getFloatFromBuffer(buf, 17);
+			//float zrot = getFloatFromBuffer(buf, 21);
+			//long long rot_timestamp = getLongFromBuffer(buf, 25);
 
-			float xacc = getFloatFromBuffer(buf, 21);
-			float yacc = getFloatFromBuffer(buf, 25);
-			float zacc = getFloatFromBuffer(buf, 29);
-			//long long acc_timestamp = getLongFromBuffer(buf, 33);
+			float xacc = getFloatFromBuffer(buf, 33);
+			float yacc = getFloatFromBuffer(buf, 37);
+			float zacc = getFloatFromBuffer(buf, 41);
+			//long long acc_timestamp = getLongFromBuffer(buf, 45);
 
 			vector<float> data = vector<float>();
-			data.push_back(xrot);
-			data.push_back(yrot);
-			data.push_back(zrot);
+			data.push_back(xvector);
+			data.push_back(yvector);
+			data.push_back(zvector);
 			data.push_back(xacc);
 			data.push_back(yacc);
 			data.push_back(zacc);
 
-			for (int i = 0; i < 6; i++) {
-				for (int j = 0; j < DATA_BUFFER_SIZE.size(); j++) {
-					(*(*dataBuffer)[i])[j]->push_back(data[i]);
+			for (int i = 0; i < dataBuffer.size(); i++) {
+				for (int j = 0; j < dataBuffer[i]->size(); j++) {
+					for (int k = 0; k < 6; k++) {
+						(*(*dataBuffer[i])[j])[k]->push_back(data[k]);
+					}
 				}
 			}
 
